@@ -1,62 +1,53 @@
 #![crate_id = "ssdp"]
-#![deny(missing_doc)]
 
 //! Implementation of the SSDP protocol in Rust
 
-use std::io::net::ip::{SocketAddr, Ipv4Addr};
-use std::io::net::udp::UdpSocket;
+extern crate native;
+
+use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr};
+use native::io::net::UdpSocket;
+use std::rt::rtio::RtioUdpSocket;
 use std::task::spawn;
 use std::str;
 
 
-static SSDP_MULTICAST_ADDR : SocketAddr = SocketAddr{ip: Ipv4Addr(239, 255, 255, 250), port: 1900};
-static LOCAL_ADDR : SocketAddr = SocketAddr{ip: Ipv4Addr(0, 0, 0, 0), port: 8575};
+static SSDP_MULTICAST_IPADDR : IpAddr = Ipv4Addr(239, 255, 255, 250);
+pub static SSDP_MULTICAST_SOCKET : SocketAddr = SocketAddr{ip: SSDP_MULTICAST_IPADDR, port: 1900};
 
-/// Container for sockets
-pub struct SSDPListener {
-    local: UdpSocket,
-    multicast: UdpSocket,
-}
 
 /// Listener for SSDP announcements
-pub trait Listener {
-    /// Creates the SSDPListener and binds sockets
-    fn listen() -> Self;
+pub trait SSDPListener {
+    /// Start listening on the multicast
+    fn listen(&mut self);
     /// Sends ssdp:discover to the multicast
     fn send_discover(&mut self);
 }
 
-impl Listener for SSDPListener {
+impl SSDPListener for UdpSocket {
 
-    fn listen() -> SSDPListener {
-        let listener = SSDPListener {
-            local: UdpSocket::bind(LOCAL_ADDR).unwrap(),
-            multicast: UdpSocket::bind(SSDP_MULTICAST_ADDR).unwrap(),
-        };
-
-        // TODO: Capture announcements etc here
-        //       Currently this just listens for unicast messages
-        let sock = listener.local.clone();
+    fn listen(&mut self) {
+        self.join_multicast(SSDP_MULTICAST_IPADDR).unwrap();
+        self.multicast_time_to_live(2).unwrap();
+        let sock = self.clone();
         spawn(proc() {
             let mut sock2 = sock;
             loop {
                 let mut buf = [0, ..1024];
                 match sock2.recvfrom(buf) {
                     Ok((amt, src)) => {
-                        println!("{}", str::from_utf8(buf.mut_slice_to(amt)).unwrap());
+                        println!("{}\r\n{}", src, str::from_utf8(buf.mut_slice_to(amt)).unwrap());
                     }
-                    Err(e) => println!("couldn't receive a datagram: {}", e)
+                    Err(e) => println!("couldn't receive a datagram {}", e)
                     }
             }
         });
-        listener
     }
 
     fn send_discover(&mut self) {
         let mx = 3;
-        let discover_message = format!("M-SEARCH * HTTP/1.1\r\nHOST: {host}\r\nST: ssdp:all\r\nMAN: \"ssdp:discover\"\r\nMX: {mx}\r\n", host=SSDP_MULTICAST_ADDR, mx=mx);
-        match self.local.sendto(discover_message.into_bytes(), SSDP_MULTICAST_ADDR) {
-            Err(e) => fail!("Couldn't send discover"),
+        let discover_message = format!("M-SEARCH * HTTP/1.1\r\nHOST: {host}\r\nST: ssdp:all\r\nMAN: \"ssdp:discover\"\r\nMX: {mx}\r\n", host=SSDP_MULTICAST_SOCKET, mx=mx);
+        match self.sendto(discover_message.into_bytes(), SSDP_MULTICAST_SOCKET) {
+            Err(e) => fail!("Couldn't send discover {}", e),
             Ok(_)  => println!("Sent discover"),
         };
     }
@@ -65,6 +56,6 @@ impl Listener for SSDPListener {
 
 #[test]
 fn test_listner() {
-    let mut listener : SSDPListener = Listener::listen();
+    let mut listener : UdpSocket = UdpSocket::bind(SSDP_MULTICAST_SOCKET).unwrap();
     listener.send_discover();
 }

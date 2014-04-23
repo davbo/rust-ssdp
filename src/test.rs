@@ -1,7 +1,10 @@
 extern crate ssdp;
-use ssdp::{Listener, SSDPListener};
+extern crate native;
+
+use native::io::net::UdpSocket;
+use ssdp::{SSDPListener, SSDP_MULTICAST_SOCKET};
 
 fn main() {
-    let mut listener : SSDPListener = Listener::listen();
-    listener.send_discover();
+    let mut listener : UdpSocket = UdpSocket::bind(SSDP_MULTICAST_SOCKET).unwrap();
+    listener.listen();
 }
