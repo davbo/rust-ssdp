@@ -3,9 +3,17 @@
 //! Implementation of the SSDP protocol in Rust
 
 extern crate native;
+extern crate http;
 
-use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr};
+use http::memstream::MemReaderFakeStream;
+use http::buffer::BufferedStream;
+use http::server::request::Request;
+
 use native::io::net::UdpSocket;
+
+use std::io::MemWriter;
+use std::io::net::udp::UdpStream;
+use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr};
 use std::rt::rtio::RtioUdpSocket;
 use std::task::spawn;
 use std::str;
@@ -30,16 +38,22 @@ impl SSDPListener for UdpSocket {
         self.multicast_time_to_live(2).unwrap();
         let sock = self.clone();
         spawn(proc() {
-            let mut sock2 = sock;
-            loop {
-                let mut buf = [0, ..1024];
-                match sock2.recvfrom(buf) {
-                    Ok((amt, src)) => {
-                        println!("{}\r\n{}", src, str::from_utf8(buf.mut_slice_to(amt)).unwrap());
+                let mut sock2 = sock;
+                loop {
+                    let mut buf = [0, ..1024];
+                    match sock2.recvfrom(buf) {
+                        Ok((amt, src)) => {
+                            let mut stream = BufferedStream::new(
+                                MemReaderFakeStream::new(Vec::from_slice(buf.slice_to(amt))));
+                            let (request, err_status) = Request::load(&mut stream);
+                            println!("{} - {}", request.method, request.request_uri);
+                            let mut w = MemWriter::new();
+                            request.headers.write_all(&mut w);
+                            println!("{}", str::from_utf8(w.unwrap().as_slice()));
+                        }
+                        Err(e) => println!("couldn't receive a datagram {}", e)
                     }
-                    Err(e) => println!("couldn't receive a datagram {}", e)
-                    }
-            }
+                }
         });
     }
 
