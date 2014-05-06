@@ -20,7 +20,7 @@ use std::str;
 
 
 static SSDP_MULTICAST_IPADDR : IpAddr = Ipv4Addr(239, 255, 255, 250);
-pub static SSDP_MULTICAST_SOCKET : SocketAddr = SocketAddr{ip: SSDP_MULTICAST_IPADDR, port: 1900};
+static SSDP_MULTICAST_SOCKET : SocketAddr = SocketAddr{ip: SSDP_MULTICAST_IPADDR, port: 1900};
 
 
 /// Listener for SSDP announcements
@@ -45,6 +45,9 @@ impl SSDPListener for UdpSocket {
                         Ok((amt, src)) => {
                             let mut stream = BufferedStream::new(
                                 MemReaderFakeStream::new(Vec::from_slice(buf.slice_to(amt))));
+                            /*let mut b = [0u8, ..4096];*/
+                            /*let len = stream.read(b);*/
+                            /*println!("{}", str::from_utf8(b.slice_to(len.unwrap())));*/
                             let (request, err_status) = Request::load(&mut stream);
                             println!("{} - {}", request.method, request.request_uri);
                             let mut w = MemWriter::new();
